@@ -260,22 +260,76 @@ NOTE: If the vision model complains about unsupported file types, assume it's an
 
         content.push({ type: 'text', text: '\nNow, based on the input data, please generate the final discharge summary. Format it nicely using Markdown.\n' });
 
-        const response = await openai.chat.completions.create({
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.'
-            },
-            {
-              role: 'user',
-              content: content
+        let text = '';
+        try {
+          const response = await openai.chat.completions.create({
+            model: model,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.'
+              },
+              {
+                role: 'user',
+                content: content
+              }
+            ],
+            temperature: 0.2,
+          });
+          text = response.choices[0].message.content || '';
+        } catch (error: any) {
+          if (error.message && (error.message.includes('multimodal') || error.message.includes('variant') || error.status === 400 || error.status === 500)) {
+            let ocrText = '';
+            if (pastSummaries.length > 0) {
+               const pastParts = [{text: 'Extract all text from these past discharge summaries precisely:'}];
+               pastSummaries.forEach((f: any) => pastParts.push({ inlineData: { data: f.data, mimeType: f.mimeType } }));
+               const resp = await ai.models.generateContent({ model: 'gemini-3.5-flash', contents: { parts: pastParts }});
+               ocrText += `\n--- EXAMPLES: PAST DISCHARGE SUMMARIES ---\n${resp.text}\n`;
             }
-          ],
-          temperature: 0.2,
-        });
 
-        const text = response.choices[0].message.content || '';
+            if (caseSheets.length > 0 || labReports.length > 0) {
+               const fileParts = [{text: 'Extract all text from these patient case sheets and lab reports precisely:'}];
+               caseSheets.forEach((f: any) => fileParts.push({ inlineData: { data: f.data, mimeType: f.mimeType } }));
+               labReports.forEach((f: any) => fileParts.push({ inlineData: { data: f.data, mimeType: f.mimeType } }));
+               const resp = await ai.models.generateContent({ model: 'gemini-3.5-flash', contents: { parts: fileParts }});
+               ocrText += `\n--- PATIENT INPUT DATA ---\n${resp.text}\n`;
+            }
+
+            const fallbackContent = [
+              {
+                type: 'text',
+                text: `You are an expert medical AI assistant specialized in writing professional, medically accurate discharge summaries for pediatric patients.
+Your task is to review the provided patient case sheets and lab reports, and generate a concise, professional discharge summary.
+${patientName ? `\nThe patient's name is: ${patientName}\n` : ''}
+If any "Past Discharge Summaries" are provided, you MUST adopt their exact style, tone, section headers, and formatting conventions so the new summary matches the hospital's existing clinical documentation standards.
+If NO templates are provided, use the standard international pediatric discharge summary format. Ensure the tone is appropriate for pediatric cases (including age, weight, and developmental context when relevant).
+
+Here is the extracted text from the uploaded documents:
+${ocrText}
+
+Now, generate the final discharge summary. Format it nicely using Markdown.`
+              }
+            ];
+
+            const response = await openai.chat.completions.create({
+              model: model,
+              messages: [
+                {
+                  role: 'system',
+                  content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.'
+                },
+                {
+                  role: 'user',
+                  content: fallbackContent
+                }
+              ],
+              temperature: 0.2,
+            });
+            text = response.choices[0].message.content || '';
+          } else {
+            throw error;
+          }
+        }
         
         let extractedName = patientName || 'Unknown';
         let extractedAge = 'Unknown';

@@ -235,16 +235,64 @@ If NO templates are provided, use the standard international pediatric discharge
 
         content.push({ type: 'text', text: '\nNow, generate the final discharge summary. Format it nicely using Markdown.\n' });
 
-        const response = await openai.chat.completions.create({
-          model: modelToUse,
-          messages: [
-            { role: 'system', content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.' },
-            { role: 'user', content: content }
-          ],
-          temperature: 0.2,
-        });
+        try {
+          const response = await openai.chat.completions.create({
+            model: modelToUse,
+            messages: [
+              { role: 'system', content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.' },
+              { role: 'user', content: content }
+            ],
+            temperature: 0.2,
+          });
+          summaryText = response.choices[0].message.content || 'Failed to generate summary.';
+        } catch (error: any) {
+          if (error.message && (error.message.includes('multimodal') || error.message.includes('variant') || error.status === 400 || error.status === 500)) {
+            await ctx.reply(`Model ${modelToUse} returned an error or does not support images. Extracting text using Gemini OCR first...`);
+            
+            let ocrText = '';
+            if (pastSummaries.length > 0) {
+               const pastParts = [{text: 'Extract all text from these past discharge summaries precisely:'}];
+               pastSummaries.forEach(f => pastParts.push({ inlineData: { data: f.data, mimeType: f.mimeType } }));
+               const resp = await ai.models.generateContent({ model: 'gemini-3.5-flash', contents: { parts: pastParts }});
+               ocrText += `\n--- EXAMPLES: PAST DISCHARGE SUMMARIES ---\n${resp.text}\n`;
+            }
 
-        summaryText = response.choices[0].message.content || 'Failed to generate summary.';
+            if (state.files.length > 0) {
+               const fileParts = [{text: 'Extract all text from these patient case sheets and lab reports precisely:'}];
+               state.files.forEach(f => fileParts.push({ inlineData: { data: f.data, mimeType: f.mimeType } }));
+               const resp = await ai.models.generateContent({ model: 'gemini-3.5-flash', contents: { parts: fileParts }});
+               ocrText += `\n--- PATIENT INPUT DATA ---\n${resp.text}\n`;
+            }
+
+            const fallbackContent = [
+              {
+                type: 'text',
+                text: `You are an expert medical AI assistant specialized in writing professional, medically accurate discharge summaries for pediatric patients.
+Your task is to review the provided patient case sheets and lab reports, and generate a concise, professional discharge summary.
+${state.patientName ? `\nThe patient's name is: ${state.patientName}\n` : ''}
+If any "Past Discharge Summaries" are provided, you MUST adopt their exact style, tone, section headers, and formatting conventions so the new summary matches the hospital's existing clinical documentation standards.
+If NO templates are provided, use the standard international pediatric discharge summary format. Ensure the tone is appropriate for pediatric cases (including age, weight, and developmental context when relevant).
+
+Here is the extracted text from the uploaded documents:
+${ocrText}
+
+Now, generate the final discharge summary. Format it nicely using Markdown.`
+              }
+            ];
+
+            const response = await openai.chat.completions.create({
+              model: modelToUse,
+              messages: [
+                { role: 'system', content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.' },
+                { role: 'user', content: fallbackContent }
+              ],
+              temperature: 0.2,
+            });
+            summaryText = response.choices[0].message.content || 'Failed to generate summary.';
+          } else {
+            throw error;
+          }
+        }
       }
 
       let extractedName = state.patientName || 'Unknown';
