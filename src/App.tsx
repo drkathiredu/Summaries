@@ -4,7 +4,7 @@ import type { UploadedFile } from './types';
 import { FileText, Loader2, ClipboardCheck, Sparkles, Settings, Building2, Stethoscope } from 'lucide-react';
 import Markdown from 'react-markdown';
 
-type Tab = 'generate' | 'templates';
+type Tab = 'generate' | 'templates' | 'saved';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('generate');
@@ -12,6 +12,7 @@ export default function App() {
   const [caseSheets, setCaseSheets] = useState<UploadedFile[]>([]);
   const [labReports, setLabReports] = useState<UploadedFile[]>([]);
   const [pastSummaries, setPastSummaries] = useState<UploadedFile[]>([]);
+  const [savedSummaries, setSavedSummaries] = useState<any[]>([]);
   
   const [models, setModels] = useState<string[]>(['gemini-3.5-flash', 'gemini-2.5-pro']);
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
@@ -30,6 +31,15 @@ export default function App() {
       .then(data => {
         if (Array.isArray(data)) {
           setPastSummaries(data);
+        }
+      })
+      .catch(console.error);
+
+    fetch('/api/saved-summaries')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSavedSummaries(data);
         }
       })
       .catch(console.error);
@@ -128,7 +138,7 @@ export default function App() {
               }`}
             >
               <Stethoscope className="w-4 h-4 mr-2" />
-              Generate Summary
+              Generate
             </button>
             <button
               onClick={() => setActiveTab('templates')}
@@ -137,7 +147,19 @@ export default function App() {
               }`}
             >
               <Building2 className="w-4 h-4 mr-2" />
-              Hospital Templates
+              Templates
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('saved');
+                fetch('/api/saved-summaries').then(r => r.json()).then(d => setSavedSummaries(d)).catch(console.error);
+              }}
+              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'saved' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Saved
             </button>
           </div>
         </div>
@@ -270,7 +292,7 @@ export default function App() {
               </div>
             </section>
           </div>
-        ) : (
+        ) : activeTab === 'templates' ? (
           <div className="max-w-3xl mx-auto">
             <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200 space-y-6">
               <div>
@@ -292,6 +314,38 @@ export default function App() {
                 onChange={handleUpdateTemplates}
               />
             </div>
+          </div>
+        ) : (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center">
+              <FileText className="w-6 h-6 mr-2 text-blue-600" />
+              Saved Summaries
+            </h2>
+            {savedSummaries.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center text-slate-500">
+                No saved summaries found.
+              </div>
+            ) : (
+              savedSummaries.map((s, i) => (
+                <div key={s.id || i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="font-bold text-lg text-slate-900">{s.patientName}</h3>
+                      <p className="text-sm text-slate-500">Age: {s.age || 'Unknown'}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {s.source}
+                      </span>
+                      <p className="text-xs text-slate-400 mt-1">{new Date(s.date).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="prose prose-sm max-w-none prose-slate">
+                    <Markdown>{s.content}</Markdown>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
 

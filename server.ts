@@ -18,10 +18,32 @@ const ai = new GoogleGenAI({
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
+const SAVED_SUMMARIES_FILE = path.join(DATA_DIR, 'saved_summaries.json');
 
 // Ensure data dir exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+export async function getSavedSummaries() {
+  try {
+    const data = await fsPromises.readFile(SAVED_SUMMARIES_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (error: any) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function saveGeneratedSummary(summary: { patientName: string; age?: string; content: string; source: 'web' | 'telegram'; date: string }) {
+  const summaries = await getSavedSummaries();
+  summaries.unshift({
+    id: Date.now().toString(),
+    ...summary
+  });
+  await fsPromises.writeFile(SAVED_SUMMARIES_FILE, JSON.stringify(summaries), 'utf-8');
 }
 
 async function getTemplates() {
@@ -55,6 +77,16 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error fetching templates:', error);
       res.status(500).json({ error: 'Failed to fetch templates' });
+    }
+  });
+
+  app.get('/api/saved-summaries', async (req, res) => {
+    try {
+      const summaries = await getSavedSummaries();
+      res.json(summaries);
+    } catch (error: any) {
+      console.error('Error fetching saved summaries:', error);
+      res.status(500).json({ error: 'Failed to fetch saved summaries' });
     }
   });
 
@@ -153,12 +185,33 @@ If NO templates are provided, use the standard international pediatric discharge
           model: model,
           contents: { parts },
           config: {
-            systemInstruction: "You are a professional medical scribe writing discharge summaries.",
+            systemInstruction: "You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.",
             temperature: 0.2, // Low temperature for factual accuracy
           },
         });
 
-        res.json({ summary: response.text });
+        const text = response.text || '';
+        
+        let extractedName = patientName || 'Unknown';
+        let extractedAge = 'Unknown';
+        let finalSummary = text;
+        
+        const match = text.match(/^PATIENT_NAME:\s*(.*?)\s*\|\s*AGE:\s*(.*?)\s*\n([\s\S]*)$/i);
+        if (match) {
+           extractedName = patientName || match[1].trim();
+           extractedAge = match[2].trim();
+           finalSummary = match[3].trim();
+        }
+
+        await saveGeneratedSummary({
+          patientName: extractedName,
+          age: extractedAge,
+          content: finalSummary,
+          source: 'web',
+          date: new Date().toISOString()
+        });
+
+        res.json({ summary: finalSummary });
       } else {
         // Use NVIDIA NIM
         const apiKey = process.env.NVIDIA_NIM_API_KEY;
@@ -211,6 +264,10 @@ NOTE: If the vision model complains about unsupported file types, assume it's an
           model: model,
           messages: [
             {
+              role: 'system',
+              content: 'You are a professional medical scribe writing discharge summaries. Start your response exactly with:\nPATIENT_NAME: <name or Unknown> | AGE: <age or Unknown>\nThen provide the summary.'
+            },
+            {
               role: 'user',
               content: content
             }
@@ -218,7 +275,28 @@ NOTE: If the vision model complains about unsupported file types, assume it's an
           temperature: 0.2,
         });
 
-        res.json({ summary: response.choices[0].message.content });
+        const text = response.choices[0].message.content || '';
+        
+        let extractedName = patientName || 'Unknown';
+        let extractedAge = 'Unknown';
+        let finalSummary = text;
+        
+        const match = text.match(/^PATIENT_NAME:\s*(.*?)\s*\|\s*AGE:\s*(.*?)\s*\n([\s\S]*)$/i);
+        if (match) {
+           extractedName = patientName || match[1].trim();
+           extractedAge = match[2].trim();
+           finalSummary = match[3].trim();
+        }
+
+        await saveGeneratedSummary({
+          patientName: extractedName,
+          age: extractedAge,
+          content: finalSummary,
+          source: 'web',
+          date: new Date().toISOString()
+        });
+
+        res.json({ summary: finalSummary });
       }
     } catch (error: any) {
       console.error('Error generating summary:', error);
