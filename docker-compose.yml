@@ -4,8 +4,8 @@ services:
   clinical-scribe:
     build: .
     container_name: clinical-scribe
-    ports:
-      - "3000:3000"
+    expose:
+      - 3000
     volumes:
       - clinical-data:/app/data
     environment:
