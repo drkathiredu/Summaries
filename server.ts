@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import fs from 'fs';
 import fsPromises from 'fs/promises';
+import { startTelegramBot } from './bot';
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -88,7 +89,7 @@ async function startServer() {
 
   app.post('/api/generate-summary', async (req, res) => {
     try {
-      const { caseSheets = [], labReports = [], pastSummaries = [], model = 'gemini-3.5-flash' } = req.body;
+      const { caseSheets = [], labReports = [], pastSummaries = [], model = 'gemini-3.5-flash', patientName = '' } = req.body;
 
       if (caseSheets.length === 0 && labReports.length === 0) {
         return res.status(400).json({ error: 'Please provide at least one case sheet or lab report.' });
@@ -98,11 +99,13 @@ async function startServer() {
         const parts: any[] = [];
 
         parts.push({
-          text: `You are an expert medical AI assistant specialized in writing professional, medically accurate discharge summaries.
+          text: `You are an expert medical AI assistant specialized in writing professional, medically accurate discharge summaries for pediatric patients.
 
 Your task is to review the provided patient case sheets and lab reports, and generate a concise, professional discharge summary.
+${patientName ? `\nThe patient's name is: ${patientName}\n` : ''}
 
 If any "Past Discharge Summaries" are provided, you MUST adopt their exact style, tone, section headers, and formatting conventions so the new summary matches the hospital's existing clinical documentation standards.
+If NO templates are provided, use the standard international pediatric discharge summary format. Ensure the tone is appropriate for pediatric cases (including age, weight, and developmental context when relevant).
 `,
         });
 
@@ -170,11 +173,13 @@ If any "Past Discharge Summaries" are provided, you MUST adopt their exact style
         const content: any[] = [
           {
             type: 'text',
-            text: `You are an expert medical AI assistant specialized in writing professional, medically accurate discharge summaries.
+            text: `You are an expert medical AI assistant specialized in writing professional, medically accurate discharge summaries for pediatric patients.
 
 Your task is to review the provided patient case sheets and lab reports, and generate a concise, professional discharge summary.
+${patientName ? `\nThe patient's name is: ${patientName}\n` : ''}
 
 If any "Past Discharge Summaries" are provided, you MUST adopt their exact style, tone, section headers, and formatting conventions so the new summary matches the hospital's existing clinical documentation standards.
+If NO templates are provided, use the standard international pediatric discharge summary format. Ensure the tone is appropriate for pediatric cases (including age, weight, and developmental context when relevant).
 
 NOTE: If the vision model complains about unsupported file types, assume it's an OCR failure or unsupported format, and try to extract whatever text you can or inform the user.`
           }
@@ -238,6 +243,7 @@ NOTE: If the vision model complains about unsupported file types, assume it's an
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    startTelegramBot();
   });
 }
 

@@ -17,6 +17,8 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
   const [isLoadingModels, setIsLoadingModels] = useState(true);
 
+  const [patientName, setPatientName] = useState<string>('');
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [summary, setSummary] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -80,6 +82,7 @@ export default function App() {
           labReports,
           pastSummaries,
           model: selectedModel,
+          patientName,
         }),
       });
 
@@ -177,6 +180,19 @@ export default function App() {
                   <p className="text-xs text-slate-500 mt-2">
                     Note: NVIDIA NIM Vision models are recommended for images. Text models may not support image inputs.
                   </p>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-semibold text-slate-800 mb-2">
+                    Patient Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={patientName}
+                    onChange={(e) => setPatientName(e.target.value)}
+                    placeholder="Enter patient name..."
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
                 </div>
 
                 {error && (
