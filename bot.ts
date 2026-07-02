@@ -74,12 +74,23 @@ export function startTelegramBot() {
           baseURL: 'https://integrate.api.nvidia.com/v1',
         });
         const response = await openai.models.list();
-        nimModels = response.data.map(m => m.id).slice(0, 5); // take just a few to fit in telegram UI
+        nimModels = response.data.map(m => m.id);
       }
       
-      const allModels = ['gemini-3.5-flash', 'gemini-2.5-pro', ...nimModels];
+      const allModels = ['gemini-3.5-flash', 'gemini-2.5-pro', ...nimModels].slice(0, 98); // Telegram max is ~100 buttons
       
-      const buttons = allModels.map(m => [Markup.button.callback(m, `model_${m}`)]);
+      const buttons = [];
+      for (let i = 0; i < allModels.length; i += 2) {
+        const row = [];
+        // Ensure callback data is under 64 bytes
+        const m1 = allModels[i];
+        row.push(Markup.button.callback(m1.length > 30 ? m1.substring(0, 27) + '...' : m1, `model_${m1}`.substring(0, 64)));
+        if (i + 1 < allModels.length) {
+          const m2 = allModels[i + 1];
+          row.push(Markup.button.callback(m2.length > 30 ? m2.substring(0, 27) + '...' : m2, `model_${m2}`.substring(0, 64)));
+        }
+        buttons.push(row);
+      }
       
       ctx.reply('Choose an AI Model (Note: Vision models are recommended for images):', Markup.inlineKeyboard(buttons));
     } catch (e) {
